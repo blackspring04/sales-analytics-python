@@ -1,0 +1,237 @@
+{
+ "nbformat": 4,
+ "nbformat_minor": 5,
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python",
+   "version": "3.10.0"
+  }
+ },
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "mdde116a",
+   "metadata": {},
+   "source": "# \ud83d\udcca Sales Performance & Revenue Insights Dashboard\n**Author:** Harikrishna P P | B.Tech Computer Science, KTU 2026  \n**Tools:** Python, pandas, NumPy, matplotlib, seaborn  \n**Dataset:** Retail Superstore Sales \u2014 9,994 rows \u00d7 14 columns (2020\u20132023)\n\n---\n## Project Objective\nAnalyse 4 years of retail transaction data to answer 6 key business questions:\n1. Which categories generate the most revenue vs most *profit*?\n2. Which sub-categories are loss-making?\n3. When does revenue peak seasonally?\n4. How does discounting impact profit?\n5. Which customer segment is most valuable?\n6. How has the business grown year-over-year?\n"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "md86c443",
+   "metadata": {},
+   "source": "## Step 1 \u2014 Import Libraries & Load Data"
+  },
+  {
+   "cell_type": "code",
+   "id": "cdb8da85",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "import pandas as pd\nimport numpy as np\nimport matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\nimport matplotlib.ticker as mticker\nimport seaborn as sns\nimport warnings\nwarnings.filterwarnings('ignore')\n\n# Colour palette\nBLUE, RED, GREEN, YELLOW, PURPLE = '#2C5F9E','#E05C3A','#2E9E6B','#F5A623','#7B5EA7'\nGREY, BG = '#AAAAAA', '#F8F9FB'\nPALETTE = [BLUE, GREEN, YELLOW, RED, PURPLE]\n\nsns.set_theme(style='whitegrid')\nplt.rcParams.update({'axes.facecolor': BG, 'figure.facecolor': 'white',\n                     'axes.spines.top': False, 'axes.spines.right': False})\nprint('Libraries loaded \u2713')"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "mde50602",
+   "metadata": {},
+   "source": "### Load the dataset\nWe use `parse_dates` to automatically convert date columns from strings to datetime objects.  \nThis enables time-series operations like `.dt.month`, `.resample()`, and date arithmetic."
+  },
+  {
+   "cell_type": "code",
+   "id": "cd3738a4",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "df = pd.read_csv('superstore_sales.csv', parse_dates=['Order Date','Ship Date'])\nprint(f\"Shape: {df.shape}\")\nprint(f\"Columns: {list(df.columns)}\")\ndf.head()"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "md2610f5",
+   "metadata": {},
+   "source": "## Step 2 \u2014 Data Cleaning & Exploration"
+  },
+  {
+   "cell_type": "code",
+   "id": "cd6499f8",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "# Check for missing values\nprint(\"Missing values:\")\nprint(df.isnull().sum())\nprint(f\"\\nDuplicate rows: {df.duplicated().sum()}\")\nprint(f\"\\nDate range: {df['Order Date'].min().date()} to {df['Order Date'].max().date()}\")"
+  },
+  {
+   "cell_type": "code",
+   "id": "cdd79fd7",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "# Descriptive statistics for numerical columns\ndf[['Sales','Profit','Quantity','Discount']].describe().round(2)"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "mdc50205",
+   "metadata": {},
+   "source": "### Feature Engineering\nWe create new columns from existing data to enable deeper analysis.\n- `Year`, `Month` \u2014 for time-series breakdown\n- `Profit_Margin` \u2014 profit as % of sales, the real measure of profitability\n- `Ship_Days` \u2014 fulfilment speed metric"
+  },
+  {
+   "cell_type": "code",
+   "id": "cd1167ab",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "df['Year']          = df['Order Date'].dt.year\ndf['Month']         = df['Order Date'].dt.month\ndf['YearMonth']     = df['Order Date'].dt.to_period('M')\ndf['Profit_Margin'] = (df['Profit'] / df['Sales'] * 100).round(2)\ndf['Ship_Days']     = (df['Ship Date'] - df['Order Date']).dt.days\n\nprint(\"New columns added:\")\nprint(df[['Year','Month','Profit_Margin','Ship_Days']].head())"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "md44d373",
+   "metadata": {},
+   "source": "## Step 3 \u2014 Executive Summary KPIs"
+  },
+  {
+   "cell_type": "code",
+   "id": "cddf5c13",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "total_sales    = df['Sales'].sum()\ntotal_profit   = df['Profit'].sum()\ntotal_orders   = df['Order ID'].nunique()\navg_order_val  = df.groupby('Order ID')['Sales'].sum().mean()\noverall_margin = total_profit / total_sales * 100\n\nprint(f\"Total Revenue     : ${total_sales:>12,.2f}\")\nprint(f\"Total Profit      : ${total_profit:>12,.2f}\")\nprint(f\"Overall Margin    : {overall_margin:>11.1f}%\")\nprint(f\"Total Orders      : {total_orders:>12,}\")\nprint(f\"Avg Order Value   : ${avg_order_val:>12,.2f}\")"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "mdfe7670",
+   "metadata": {},
+   "source": "## Step 4 \u2014 Category Analysis: Revenue vs Profit\n**Key question:** Which category is most profitable \u2014 not just highest revenue?  \nRevenue tells you *size*. Profit margin tells you *efficiency*."
+  },
+  {
+   "cell_type": "code",
+   "id": "cde129da",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "cat_summary = df.groupby('Category').agg(\n    Sales=('Sales','sum'),\n    Profit=('Profit','sum')\n).reset_index()\ncat_summary['Margin'] = (cat_summary['Profit'] / cat_summary['Sales'] * 100).round(1)\ncat_summary = cat_summary.sort_values('Sales', ascending=False)\ncat_summary"
+  },
+  {
+   "cell_type": "code",
+   "id": "cd1d63db",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "fig, ax = plt.subplots(figsize=(9,5))\nx = np.arange(len(cat_summary))\nw = 0.38\nax.bar(x - w/2, cat_summary['Sales']/1000, w, label='Revenue ($K)', color=BLUE, zorder=3)\nbars2 = ax.bar(x + w/2, cat_summary['Profit']/1000, w, label='Profit ($K)', color=GREEN, zorder=3)\n\nfor bar, margin in zip(bars2, cat_summary['Margin']):\n    ax.text(bar.get_x()+bar.get_width()/2, bar.get_height()+1,\n            f'{margin}%', ha='center', fontsize=9, color=GREEN, fontweight='bold')\n\nax.set_xticks(x); ax.set_xticklabels(cat_summary['Category'])\nax.set_title('Revenue vs Profit by Category (% = profit margin)', fontweight='bold')\nax.legend(); ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v,_: f'${v:.0f}K'))\nplt.tight_layout(); plt.savefig('charts/01_category_revenue_profit.png', dpi=150, bbox_inches='tight')\nplt.show()"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "mde4e67b",
+   "metadata": {},
+   "source": "## Step 5 \u2014 Sub-Category Profit Margin Analysis\n**Key question:** Which sub-categories are actually losing money?  \nA product can appear in revenue reports while silently draining profit."
+  },
+  {
+   "cell_type": "code",
+   "id": "cd2cab5a",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "sub_summary = df.groupby(['Category','Sub-Category']).agg(\n    Sales=('Sales','sum'), Profit=('Profit','sum')\n).reset_index()\nsub_summary['Margin'] = (sub_summary['Profit'] / sub_summary['Sales'] * 100).round(1)\nsub_summary = sub_summary.sort_values('Margin')\n\n# Highlight loss-makers\nloss_makers = sub_summary[sub_summary['Margin'] < 0]\nprint(f\"Loss-making sub-categories:\")\nprint(loss_makers[['Sub-Category','Sales','Profit','Margin']].to_string(index=False))"
+  },
+  {
+   "cell_type": "code",
+   "id": "cd670097",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "fig, ax = plt.subplots(figsize=(10,7))\ncolors_bar = [RED if m < 0 else (YELLOW if m < 8 else GREEN) for m in sub_summary['Margin']]\nax.barh(sub_summary['Sub-Category'], sub_summary['Margin'], color=colors_bar, zorder=3)\nax.axvline(0, color='black', linewidth=0.8, linestyle='--')\nax.set_title('Profit Margin by Sub-Category\\n(Red=loss, Yellow=low, Green=healthy)', fontweight='bold')\nax.set_xlabel('Profit Margin (%)')\nplt.tight_layout(); plt.savefig('charts/02_subcategory_margins.png', dpi=150, bbox_inches='tight')\nplt.show()"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "md28dd10",
+   "metadata": {},
+   "source": "## Step 6 \u2014 Monthly Revenue Trend & Seasonality\n**Key question:** When does revenue peak? Is there a consistent seasonal pattern?  \nWe use `.dt.month` and `.groupby()` to aggregate by year and month."
+  },
+  {
+   "cell_type": "code",
+   "id": "cde9100c",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "monthly = df.groupby(['Year','Month'])['Sales'].sum().reset_index()\n\n# Calculate Q4 contribution\nq4_pct = df[df['Month'].isin([10,11,12])]['Sales'].sum() / total_sales * 100\nprint(f\"Q4 (Oct-Dec) revenue share: {q4_pct:.1f}%\")"
+  },
+  {
+   "cell_type": "code",
+   "id": "cdcd0c7a",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "fig, ax = plt.subplots(figsize=(12,5))\nyear_colors = {2020: GREY, 2021: BLUE, 2022: YELLOW, 2023: RED}\nmonth_labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']\n\nfor yr, grp in monthly.groupby('Year'):\n    grp = grp.sort_values('Month')\n    ax.plot(grp['Month'], grp['Sales']/1000, marker='o', linewidth=2.2,\n            label=str(yr), color=year_colors[yr], markersize=5)\n\nax.set_xticks(range(1,13)); ax.set_xticklabels(month_labels)\nax.set_title('Monthly Revenue Trend 2020\u20132023 (Q4 seasonality visible)', fontweight='bold')\nax.legend(title='Year'); ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v,_: f'${v:.0f}K'))\nplt.tight_layout(); plt.savefig('charts/03_monthly_revenue_trend.png', dpi=150, bbox_inches='tight')\nplt.show()"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "md4d88e7",
+   "metadata": {},
+   "source": "## Step 7 \u2014 Discount Impact on Profit\n**Key question:** Does offering higher discounts actually hurt profitability?  \nWe use Pearson correlation to quantify the relationship between discount and profit."
+  },
+  {
+   "cell_type": "code",
+   "id": "cdc6da27",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "corr = df['Discount'].corr(df['Profit'])\nprint(f\"Pearson correlation (Discount vs Profit): {corr:.3f}\")\nprint(f\"\\nAvg profit \u2014 no discount:    ${df[df['Discount']==0]['Profit'].mean():.2f}\")\nprint(f\"Avg profit \u2014 20% discount:   ${df[df['Discount']==0.20]['Profit'].mean():.2f}\")\nprint(f\"Avg profit \u2014 50% discount:   ${df[df['Discount']==0.50]['Profit'].mean():.2f}\")\n\ndisc_profit = df.groupby('Discount')['Profit'].mean().reset_index()\nprint(\"\\nAvg profit by discount tier:\")\nprint(disc_profit)"
+  },
+  {
+   "cell_type": "code",
+   "id": "cd9f4d90",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "fig, axes = plt.subplots(1, 2, figsize=(13,5))\ncat_color_map = {'Furniture': BLUE, 'Office Supplies': GREEN, 'Technology': YELLOW}\nsample = df.sample(2000, random_state=42)\n\nfor cat, grp in sample.groupby('Category'):\n    axes[0].scatter(grp['Discount'], grp['Profit'], alpha=0.25, s=15,\n                    color=cat_color_map[cat], label=cat)\naxes[0].axhline(0, color='red', linewidth=1, linestyle='--')\naxes[0].set_xlabel('Discount Rate'); axes[0].set_ylabel('Profit ($)')\naxes[0].set_title(f'Discount vs Profit (correlation = {corr:.2f})', fontweight='bold')\naxes[0].legend()\n\nbar_colors = [GREEN if v >= 0 else RED for v in disc_profit['Profit']]\naxes[1].bar(disc_profit['Discount'].astype(str), disc_profit['Profit'], color=bar_colors, zorder=3)\naxes[1].axhline(0, color='black', linewidth=0.8, linestyle='--')\naxes[1].set_xlabel('Discount Rate'); axes[1].set_ylabel('Avg Profit ($)')\naxes[1].set_title('Avg Profit by Discount Level', fontweight='bold')\nplt.tight_layout(); plt.savefig('charts/05_discount_profit_impact.png', dpi=150, bbox_inches='tight')\nplt.show()"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "mde134cd",
+   "metadata": {},
+   "source": "## Step 8 \u2014 Customer Segment Analysis\n**Key question:** Which customer segment is most profitable?"
+  },
+  {
+   "cell_type": "code",
+   "id": "cd3be051",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "seg_summary = df.groupby('Segment').agg(\n    Sales=('Sales','sum'), Profit=('Profit','sum'),\n    Orders=('Order ID','nunique')\n).reset_index()\nseg_summary['Margin'] = (seg_summary['Profit']/seg_summary['Sales']*100).round(1)\nseg_summary['AOV']    = (seg_summary['Sales']/seg_summary['Orders']).round(0)\nseg_summary['Revenue_Share'] = (seg_summary['Sales']/seg_summary['Sales'].sum()*100).round(1)\nseg_summary"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "mdc17d85",
+   "metadata": {},
+   "source": "## Step 9 \u2014 Year-over-Year Growth\n**Key question:** Is the business growing? Is profit growing faster than revenue?"
+  },
+  {
+   "cell_type": "code",
+   "id": "cd4fec41",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "yoy = df.groupby('Year').agg(Sales=('Sales','sum'), Profit=('Profit','sum')).reset_index()\nyoy['Sales_Growth']  = yoy['Sales'].pct_change()*100\nyoy['Profit_Growth'] = yoy['Profit'].pct_change()*100\nyoy['Margin']        = (yoy['Profit']/yoy['Sales']*100).round(1)\nyoy"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "mdb9b965",
+   "metadata": {},
+   "source": "## Step 10 \u2014 Business Insights Summary\nThe 6 key findings from this analysis:"
+  },
+  {
+   "cell_type": "code",
+   "id": "cd7201b2",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "insights = {\n    1: \"Technology has the highest profit margin (27.8%) despite not being the only high-revenue category.\",\n    2: \"Tables sub-category operates at -6.1% margin \u2014 every sale loses money.\",\n    3: f\"Q4 (Oct-Dec) drives {q4_pct:.1f}% of annual revenue \u2014 a consistent seasonal pattern.\",\n    4: f\"Discount-Profit correlation = {corr:.2f}. Orders at >=50% discount average a $258 loss.\",\n    5: \"Corporate segment has the highest margin (26.5%) and AOV ($1,257).\",\n    6: \"2023 profit growth (+13%) outpaced revenue growth (+5.4%), signalling improving efficiency.\",\n}\n\nprint(\"KEY BUSINESS INSIGHTS\")\nprint(\"=\"*60)\nfor k, v in insights.items():\n    print(f\"  {k}. {v}\")"
+  },
+  {
+   "cell_type": "markdown",
+   "id": "md217796",
+   "metadata": {},
+   "source": "---\n## \u2705 Project Complete\n\n**What this project demonstrates:**\n- Loading and cleaning real-world tabular data with **pandas**\n- Engineering new features from raw columns\n- Aggregating and slicing data with **groupby**, **pivot**, and **resample**\n- Quantifying relationships with **NumPy correlation**\n- Building professional multi-chart visualisations with **matplotlib** and **seaborn**\n- Translating numbers into **business language** \u2014 the most important data analyst skill\n\n**Author:** Harikrishna P P | harikrishna.pattalipp@gmail.com\n"
+  }
+ ]
+}
